@@ -3,9 +3,11 @@ from discord.ext import commands,tasks
 import youtube_dl
 import asyncio
 import gtts
-import config
+from dotenv import load_dotenv
+import os
 
-secret_key = config.SECRET_KEY
+load_dotenv()
+secret_key = os.getenv('SECRET_KEY')
 
 ytdl_format_options = {
     'format': 'bestaudio/best',
@@ -129,7 +131,16 @@ class Music(commands.Cog):
 
         async with ctx.typing():
             player = await YTDLSource.from_url(f"ytsearch:{song}", loop=self.bot.loop)
-            ctx.voice_client.play(player, after=lambda e: print(f'Player error: {e}') if e else None)
+
+            if ctx.voice_client.is_playing() or ctx.voice_client.is_paused():
+            # If a song is already playing or paused, add it to the queue
+                ctx.voice_client.source.queue.append(player)
+                await ctx.send(f'Added to queue: {player.title}')
+
+            else:
+            # If no song is playing, play the current song
+                ctx.voice_client.play(player, after=lambda e: print(f'Player error: {e}') if e else None)
+                await ctx.send(f'Now playing: {player.title}')
 
         await ctx.send(f'Now playing: {player.title}')
 
@@ -173,6 +184,7 @@ class Music(commands.Cog):
             await ctx.send("Song queue cleared.")
         else:
             await ctx.send("No song queue to clear.")
+    
 
 
 intents = discord.Intents.default()
@@ -189,6 +201,8 @@ bot = commands.Bot(
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     print('------')
+
+
 
 
 async def main():
