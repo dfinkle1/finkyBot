@@ -55,10 +55,15 @@ class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.check_idle.start()
+        self.queue=[]
 
     def cog_unload(self):
         self.check_idle.cancel()
     
+    @commands.command()
+    async def kys(self,ctx):
+        await ctx.send(f"{ctx.author.nick} should kill himself")
+
     @commands.command()
     async def tts(self, ctx, *, text):
         """Converts text to speech and plays it"""
@@ -134,7 +139,7 @@ class Music(commands.Cog):
 
             if ctx.voice_client.is_playing() or ctx.voice_client.is_paused():
             # If a song is already playing or paused, add it to the queue
-                ctx.voice_client.source.queue.append(player)
+                self.queue.append(player)
                 await ctx.send(f'Added to queue: {player.title}')
 
             else:
@@ -143,7 +148,15 @@ class Music(commands.Cog):
                 await ctx.send(f'Now playing: {player.title}')
 
         await ctx.send(f'Now playing: {player.title}')
-
+    
+    async def play_next(self,ctx,error=None):
+        if self.queue:
+            next_song=self.queue.pop(0)
+            ctx.voice.client.play(next_song, after = lambda e: self.play_next(ctx,e))
+            await ctx.send(f"Now playing:{next_song.title}")
+        else:
+            await ctx.voice_client.disconnect()
+            
     @commands.command()
     async def stop(self, ctx):
         """Stops playing and clears the queue"""
