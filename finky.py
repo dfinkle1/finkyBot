@@ -31,7 +31,7 @@ ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=0.5):
+    def __init__(self, source, *, data, volume=0.10):
         super().__init__(source, volume)
 
         self.data = data
@@ -60,10 +60,6 @@ class Music(commands.Cog):
     def cog_unload(self):
         self.check_idle.cancel()
     
-    @commands.command()
-    async def kys(self,ctx):
-        await ctx.send(f"{ctx.author.nick} should kill himself")
-
     @commands.command()
     async def tts(self, ctx, *, text):
         """Converts text to speech and plays it"""
@@ -144,19 +140,9 @@ class Music(commands.Cog):
 
             else:
             # If no song is playing, play the current song
-                ctx.voice_client.play(player, after=lambda e: print(f'Player error: {e}') if e else None)
+                await ctx.voice_client.play(player, after=lambda e: self.play_next(ctx,e))
                 await ctx.send(f'Now playing: {player.title}')
 
-        await ctx.send(f'Now playing: {player.title}')
-    
-    async def play_next(self,ctx,error=None):
-        if self.queue:
-            next_song=self.queue.pop(0)
-            ctx.voice.client.play(next_song, after = lambda e: self.play_next(ctx,e))
-            await ctx.send(f"Now playing:{next_song.title}")
-        else:
-            await ctx.voice_client.disconnect()
-            
     @commands.command()
     async def stop(self, ctx):
         """Stops playing and clears the queue"""
@@ -167,19 +153,29 @@ class Music(commands.Cog):
     @commands.command()
     async def skip(self, ctx):
         """Skips the currently playing song"""
-
+        
         if ctx.voice_client and ctx.voice_client.is_playing():
             ctx.voice_client.stop()
-            await ctx.send("Skipped the current song.")
-        else:
-            await ctx.send("No song is currently playing.")
+            await self.play_next(ctx)
+
+    async def play_next(self,ctx,error=None):
+            if error:
+                print(f'wubalubadubdub')
+
+            if self.queue:
+                next_song=self.queue.pop(0)
+                await ctx.voice_client.play(next_song, after = lambda e: self.play_next(ctx,e))
+                await ctx.send(f"Now playing:{next_song.title}")
+            else:
+                await ctx.voice_client.disconnect()
+                await ctx.send("No songs left in queue")
 
     @commands.command()
     async def queue(self, ctx):
         """Displays the current song queue"""
 
         if ctx.voice_client and ctx.voice_client.is_playing():
-            queue = [f'{i + 1}. {song.title}' for i, song in enumerate(ctx.voice_client.source.queue)]
+            queue = [f'{i + 1}. {song.title}' for i, song in enumerate(self.queue)]
             queue_message = '\n'.join(queue)
             await ctx.send(f"Current Song Queue:\n{queue_message}")
         else:
