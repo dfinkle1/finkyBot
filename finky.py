@@ -4,10 +4,13 @@ import youtube_dl
 import asyncio
 import gtts
 from async_timeout import timeout
-from dotenv import load_dotenv
+#you need this file below to load locally
+# from dotenv import load_dotenv
 import os
 
-load_dotenv()
+#you need this file below to load locally
+
+# load_dotenv()
 secret_key = os.getenv('SECRET_KEY')
 
 ytdl_format_options = {
