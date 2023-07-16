@@ -5,14 +5,15 @@ import asyncio
 import gtts
 from async_timeout import timeout
 #you need this file below to load locally
-# from dotenv import load_dotenv
+from dotenv import load_dotenv
 import os
 
 #you need this file below to load locally
 
-# load_dotenv()
+load_dotenv()
 secret_key = os.getenv('SECRET_KEY')
 
+print(secret_key)
 ytdl_format_options = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
