@@ -41,14 +41,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.url = data.get('url')
 
     @classmethod
-    async def from_url(cls, url, *, loop=None, stream=False):
+    async def from_url(cls, url, *, loop=None, download=False):
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=download))
 
         if 'entries' in data:
             data = data['entries'][0]
 
-        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        filename = ytdl.prepare_filename(data) if download else data['url']
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 class MusicPlayer:
@@ -63,6 +63,8 @@ class MusicPlayer:
 
         self.loop = asyncio.get_event_loop()
         self.loop.create_task(self.player_loop())
+
+
     async def player_loop(self):
         await self.bot.wait_until_ready()
 
@@ -70,10 +72,10 @@ class MusicPlayer:
             self.next.clear()
         
             try:
-                async with timeout(300):
+                async with timeout(120):
                     source = await self.queue.get()
             except asyncio.TimeoutError:
-                return self.bot.disconnect()
+                return self.bot.voice_client.disconnect()
         
             self._guild.voice_client.play(source, after=lambda _: self.next.set())
             self.np = await self._channel.send(f'**Now Playing:** `{source.title}`')
@@ -84,6 +86,8 @@ class MusicPlayer:
                 await self.np.delete()
             except discord.HTTPException:
                 pass
+        # call the cleanup to remove the downloaded file after playing
+                
     def start_loop(self):
         self.loop.run_forever()
 
@@ -139,7 +143,7 @@ class Music(commands.Cog):
 
         # async with ctx.typing():
         player = self.get_player(ctx)
-        source = await YTDLSource.from_url(f"ytsearch:{song}", loop=self.bot.loop)
+        source = await YTDLSource.from_url(f"ytsearch:{song}", loop=self.bot.loop,download=False)
         await player.queue.put(source)
 
         player.start_loop()
