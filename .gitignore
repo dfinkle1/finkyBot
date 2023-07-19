@@ -3,3 +3,4 @@ venv
 .env
 tts.mp3
 .mp3
+.vscode/settings.json

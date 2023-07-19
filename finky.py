@@ -1,97 +1,107 @@
 import discord
-from discord.ext import commands,tasks
+from discord.ext import commands, tasks
 import youtube_dl
 import asyncio
 import gtts
 from async_timeout import timeout
-#you need this file below to load locally
+
+# you need this line below to load locally
 from dotenv import load_dotenv
 import os
 
-#you need this file below to load locally
-
+# you need this line below to load locally
 load_dotenv()
-secret_key = os.getenv('SECRET_KEY')
+TOKEN = os.getenv("SECRET_KEY")
 
-print(secret_key)
+
 ytdl_format_options = {
-    'format': 'bestaudio/best',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0',
+    "format": "bestaudio/best",
+    "outtmpl": "%(extractor)s-%(id)s-%(title)s.%(ext)s",
+    "restrictfilenames": True,
+    "noplaylist": True,
+    "nocheckcertificate": True,
+    "ignoreerrors": False,
+    "logtostderr": False,
+    "quiet": True,
+    "no_warnings": True,
+    "default_search": "auto",
+    "source_address": "0.0.0.0",
 }
 
 ffmpeg_options = {
-    'options': '-vn',
+    "options": "-vn",
 }
 
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=0.20):
+    def __init__(self, source, *, data, volume=0.30, file_path=None):
         super().__init__(source, volume)
 
         self.data = data
-
-        self.title = data.get('title')
-        self.url = data.get('url')
+        self.file_path = file_path
+        self.title = data.get("title")
+        self.url = data.get("url")
 
     @classmethod
     async def from_url(cls, url, *, loop=None, download=False):
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=download))
+        data = await loop.run_in_executor(
+            None, lambda: ytdl.extract_info(url, download=download)
+        )
 
-        if 'entries' in data:
-            data = data['entries'][0]
+        if "entries" in data:
+            data = data["entries"][0]
 
-        filename = ytdl.prepare_filename(data) if download else data['url']
-        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+        filename = ytdl.prepare_filename(data)
+        return cls(
+            discord.FFmpegPCMAudio(filename, **ffmpeg_options),
+            data=data,
+            file_path=filename,
+        )
+
+    def cleanup(self):
+        os.remove(f"{self.file_path}")
+
 
 class MusicPlayer:
-    def __init__(self,ctx):
+    def __init__(self, ctx):
         self.bot = ctx.bot
         self._guild = ctx.guild
         self._channel = ctx.channel
 
-        self.np = None #now playing message
+        self.np = None  # now playing message
         self.queue = asyncio.Queue()
         self.next = asyncio.Event()
 
         self.loop = asyncio.get_event_loop()
         self.loop.create_task(self.player_loop())
 
-
     async def player_loop(self):
         await self.bot.wait_until_ready()
 
         while not self.bot.is_closed():
             self.next.clear()
-        
+
             try:
-                async with timeout(120):
+                async with timeout(30):
                     source = await self.queue.get()
             except asyncio.TimeoutError:
-                return self.bot.voice_client.disconnect()
-        
+                return await self._guild.voice_client.disconnect()
+
             self._guild.voice_client.play(source, after=lambda _: self.next.set())
-            self.np = await self._channel.send(f'**Now Playing:** `{source.title}`')
+            self.np = await self._channel.send(f"**Now Playing:** `{source.title}`")
             await self.next.wait()
 
             try:
                 # We are no longer playing this song...
+                # await source.cleanup()
                 await self.np.delete()
             except discord.HTTPException:
                 pass
         # call the cleanup to remove the downloaded file after playing
-                
+
     def start_loop(self):
         self.loop.run_forever()
 
@@ -100,18 +110,13 @@ class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.players = {}
-        
-    def get_player(self,ctx):
+
+    def get_player(self, ctx):
         try:
             player = self.players[ctx.guild.id]
         except KeyError:
-            print("hi")
-            print(ctx.guild.id)
             player = MusicPlayer(ctx)
-            print("hi!!!")
-            self.players[ctx.guild.id]=player
-            print(self.players)
-            print(player)
+            self.players[ctx.guild.id] = player
 
         return player
 
@@ -131,13 +136,6 @@ class Music(commands.Cog):
         else:
             await channel.connect()
 
-   
-    @commands.command()
-    async def test(self,ctx):
-        print(ctx.guild.id)
-        # print(player)
-        print("hello")
-
     @commands.command()
     async def play(self, ctx, *, song):
         """Plays a song by name from YouTube"""
@@ -147,37 +145,38 @@ class Music(commands.Cog):
 
         # async with ctx.typing():
         player = self.get_player(ctx)
-        source = await YTDLSource.from_url(f"ytsearch:{song}", loop=self.bot.loop,download=False)
+        source = await YTDLSource.from_url(
+            f"ytsearch:{song}", loop=self.bot.loop, download=True
+        )
         await player.queue.put(source)
 
         player.start_loop()
         # await ctx.voice_client.play(source)
-    
+
     @commands.command()
-    async def stop(self,ctx):
+    async def stop(self, ctx):
         ctx.voice_client.stop()
         await ctx.send("u has skipped jajaa")
 
     @commands.command()
     async def skip(self, ctx):
         """Skips the currently playing song"""
-        
+
         if ctx.voice_client and ctx.voice_client.is_playing():
             ctx.voice_client.stop()
             await self.play_next(ctx)
 
-    async def play_next(self,ctx,error=None):
-            
-            print(f'wubalubadubdub')
+    # async def play_next(self, ctx, error=None):
+    #     if self.queue:
+    #         next_song = self.queue.pop(0)
+    #         await ctx.send(f"Now playing:{next_song.title}")
+    #         await ctx.voice_client.play(
+    #             next_song, after=lambda e: self.play_next(ctx, e)
+    #         )
 
-            if self.queue:
-                next_song=self.queue.pop(0)
-                await ctx.send(f"Now playing:{next_song.title}")
-                await ctx.voice_client.play(next_song, after = lambda e: self.play_next(ctx,e))
-                
-            else:
-                await ctx.voice_client.disconnect()
-                await ctx.send("No songs left in queue")
+    #     else:
+    #         await ctx.voice_client.disconnect()
+    #         await ctx.send("No songs left in queue")
 
     @commands.command()
     async def leave(self, ctx):
@@ -200,12 +199,12 @@ class Music(commands.Cog):
         """Displays the current song queue"""
 
         if ctx.voice_client and ctx.voice_client.is_playing():
-            queue = [f'{i + 1}. {song.title}' for i, song in enumerate(self.queue)]
-            queue_message = '\n'.join(queue)
+            queue = [f"{i + 1}. {song.title}" for i, song in enumerate(self.queue)]
+            queue_message = "\n".join(queue)
             await ctx.send(f"Current Song Queue:\n{queue_message}")
         else:
             await ctx.send("No song is currently playing.")
-    
+
     @commands.command()
     async def tts(self, ctx, *, text):
         """Converts text to speech and plays it"""
@@ -232,31 +231,27 @@ class Music(commands.Cog):
 
         await voice_client.disconnect()
 
-    
-
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(
     command_prefix=commands.when_mentioned_or("$"),
-    description='Finky bot',
+    description="Finky bot",
     intents=intents,
 )
 
 
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user} (ID: {bot.user.id})')
-    print('------')
-
-
+    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    print("------")
 
 
 async def main():
     async with bot:
         await bot.add_cog(Music(bot))
-        await bot.start(secret_key)
+        await bot.start(TOKEN)
 
 
 asyncio.run(main())
